@@ -106,7 +106,7 @@ def generate_master_geospatial_pipeline():
     # Execute Spatial joins to get physical aggregate counts per tract polygon
     joined_assets = gpd.sjoin(pois_gdf, tracts_gdf, how="left", predicate="within")
     asset_counts = joined_assets.groupby("GEOID").size().to_frame("total_assets")
-
+    
     final_data = tracts_gdf.merge(employment_df, on="GEOID", how="inner")
     final_data = final_data.merge(asset_counts, on="GEOID", how="left").fillna({'total_assets': 0})
     final_data['total_assets'] = final_data['total_assets'].astype(int)
@@ -140,62 +140,63 @@ filtered_pois = pois_gdf[pois_gdf['category'].isin(selected_categories)]
 # =========================================================
 st.subheader("High-Resolution 10x10 Analytical Spatial Overlay Canvas")
 
-map_center = [33.49, -112.20]
-m = folium.Map(
-    location=map_center, 
-    zoom_start=13, 
-    tiles="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
-    attr="&copy; OpenStreetMap contributors"
-)
-
-# Target the data array chosen by the slider panel
-active_column_target = "hardship_index" if target_layer == "Resource Hardship Index (RHI)" else "unemployment_rate"
-legend_label_string = "Calculated RHI Value" if active_column_target == "hardship_index" else "Unemployment Percentage (%)"
-
-# Compile Choropleth layer
-Choropleth(
-    geo_data=final_data.to_crs(epsg=4326),
-    name="Socioeconomic Polygons",
-    data=final_data,
-    columns=["GEOID", active_column_target], 
-    key_on="feature.properties.GEOID",
-    fill_color="YlOrRd",
-    fill_opacity=0.38,  
-    line_opacity=0.4,
-    legend_name=legend_label_string,
-    smooth_factor=0
-).add_to(m)
-
-# Standardized tooltip hover layer
-folium.GeoJson(
-    final_data.to_crs(epsg=4326),
-    name="Tract Data Hover Labels",
-    style_function=lambda x: {'fillColor': 'transparent', 'color': 'transparent', 'weight': 0},
-    tooltip=folium.GeoJsonTooltip(
-        fields=['GEOID', 'hardship_index', 'unemployment_rate', 'total_assets'],
-        aliases=['Census Tract ID:', 'Hardship Index (RHI):', 'Unemployment Rate:', 'Active Asset Count:'],
-        localize=True, sticky=True, labels=True,
-        style="background-color: #f5f5f5; border: 2px solid #555; border-radius: 4px; font-family: Arial; font-size: 12px; padding: 10px;"
+# Using st.fragment to isolate map interaction rendering blocks
+@st.fragment
+def render_interactive_map(final_data, filtered_pois, target_layer):
+    map_center = [33.49, -112.20]
+    m = folium.Map(
+        location=map_center, 
+        zoom_start=13, 
+        tiles="https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png",
+        attr="&copy; OpenStreetMap contributors"
     )
-).add_to(m)
 
-# Pin resource markers based on chosen category exclusions
-category_colors = {'Education': 'blue', 'Healthcare': 'red', 'Worship': 'purple', 'Community Center/YMCA': 'green'}
-category_icons = {'Education': 'graduation-cap', 'Healthcare': 'heart', 'Worship': 'church', 'Community Center/YMCA': 'users'}
+    active_column_target = "hardship_index" if target_layer == "Resource Hardship Index (RHI)" else "unemployment_rate"
+    legend_label_string = "Calculated RHI Value" if active_column_target == "hardship_index" else "Unemployment Percentage (%)"
 
-for idx, row in filtered_pois.iterrows():
-    lat, lon = row.geometry.y, row.geometry.x
-    cat = row['category']
-    popup_text = f"<div style='font-family:Arial;'><b>Resource:</b> {row['name']}<br><b>Category:</b> {cat}</div>"
-
-    Marker(
-        location=[lat, lon],
-        popup=Popup(popup_text, max_width=250),
-        icon=Icon(color=category_colors.get(cat, 'gray'), icon=category_icons.get(cat, 'info-sign'), prefix='fa')
+    Choropleth(
+        geo_data=final_data.to_crs(epsg=4326),
+        name="Socioeconomic Polygons",
+        data=final_data,
+        columns=["GEOID", active_column_target], 
+        key_on="feature.properties.GEOID",
+        fill_color="YlOrRd",
+        fill_opacity=0.38,  
+        line_opacity=0.4,
+        legend_name=legend_label_string,
+        smooth_factor=0
     ).add_to(m)
 
-# Render map directly onto user screen fluidly scaling widths
-st_folium(m, width="100%", height=550, returned_objects=[])
+    folium.GeoJson(
+        final_data.to_crs(epsg=4326),
+        name="Tract Data Hover Labels",
+        style_function=lambda x: {'fillColor': 'transparent', 'color': 'transparent', 'weight': 0},
+        tooltip=folium.GeoJsonTooltip(
+            fields=['GEOID', 'hardship_index', 'unemployment_rate', 'total_assets'],
+            aliases=['Census Tract ID:', 'Hardship Index (RHI):', 'Unemployment Rate:', 'Active Asset Count:'],
+            localize=True, sticky=True, labels=True,
+            style="background-color: #f5f5f5; border: 2px solid #555; border-radius: 4px; font-family: Arial; font-size: 12px; padding: 10px;"
+        )
+    ).add_to(m)
+
+    category_colors = {'Education': 'blue', 'Healthcare': 'red', 'Worship': 'purple', 'Community Center/YMCA': 'green'}
+    category_icons = {'Education': 'graduation-cap', 'Healthcare': 'heart', 'Worship': 'church', 'Community Center/YMCA': 'users'}
+
+    for idx, row in filtered_pois.iterrows():
+        lat, lon = row.geometry.y, row.geometry.x
+        cat = row['category']
+        popup_text = f"<div style='font-family:Arial;'><b>Resource:</b> {row['name']}<br><b>Category:</b> {cat}</div>"
+        
+        Marker(
+            location=[lat, lon],
+            popup=Popup(popup_text, max_width=250),
+            icon=Icon(color=category_colors.get(cat, 'gray'), icon=category_icons.get(cat, 'info-sign'), prefix='fa')
+        ).add_to(m)
+
+    st_folium(m, width="100%", height=550, returned_objects=[])
+
+# Execute independent map fragment block
+render_interactive_map(final_data, filtered_pois, target_layer)
 
 # =========================================================
 # MAIN SECTION 2: RESPONSIVE SIDE-BY-SIDE METRICS CHARTS (PLOTLY)
@@ -203,15 +204,13 @@ st_folium(m, width="100%", height=550, returned_objects=[])
 st.markdown("---")
 st.subheader("Dynamic Analytical Charts & Structural Data Correlation")
 
-# Create layout columns that stack vertically on mobile screens automatically
 col1, col2 = st.columns(2)
 
 with col1:
     st.markdown("**Infrastructure Proportions Across Active Types**")
     category_tallies = filtered_pois['category'].value_counts().reset_index()
     category_tallies.columns = ['Asset Category', 'Total Registered Pins']
-
-    # Render Plotly bar graph
+    
     fig_bar = px.bar(
         category_tallies, x='Asset Category', y='Total Registered Pins',
         color='Asset Category',
