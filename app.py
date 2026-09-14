@@ -213,4 +213,4 @@ with col1:
     
     fig_bar = px.bar(
         category_tallies, x='Asset Category', y='Total Registered Pins',
-        color='Asset Category',
+        color='Asset Category',)
